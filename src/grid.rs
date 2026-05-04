@@ -707,7 +707,7 @@ impl Grid {
             let mut prev_pos = self.pos;
             self.pos.col = 0;
             let scrolled = self.row_inc_scroll(1, attrs);
-            prev_pos.row -= scrolled;
+            prev_pos.row = prev_pos.row.saturating_sub(scrolled);
 
             let new_pos = self.pos;
             self.drawing_row_mut(prev_pos.row)
