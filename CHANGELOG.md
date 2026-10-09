@@ -6,7 +6,10 @@
 
 * Support for OSC 8 hyperlinks. Each cell keeps the hyperlink it was written
   with, so links scroll into the scrollback with their text. See
-  `Screen::cell_hyperlink`, `Screen::hyperlink` and `Hyperlink`.
+  `Screen::cell_hyperlink`, `Screen::hyperlink` and `Hyperlink`. At most
+  4096 distinct links (and 1 MiB of their uris) are kept; past that, links
+  no cell has are forgotten, then the least recently used ones, whose cells
+  lose them.
 
 ### Changed
 

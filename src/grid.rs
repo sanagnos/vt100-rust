@@ -129,6 +129,12 @@ impl Grid {
         }
     }
 
+    pub fn forget_hyperlinks(&mut self, forgotten: &[bool]) {
+        for row in self.scrollback.iter_mut().chain(&mut self.rows) {
+            row.forget_hyperlinks(forgotten);
+        }
+    }
+
     pub fn visible_rows(&self) -> impl Iterator<Item = &crate::row::Row> {
         let scrollback_len = self.scrollback.len();
         let rows_len = self.rows.len();
