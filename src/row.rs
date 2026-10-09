@@ -200,6 +200,17 @@ impl Row {
         }
     }
 
+    pub fn forget_hyperlinks(&mut self, forgotten: &[bool]) {
+        for cell in &mut self.cells {
+            if cell
+                .hyperlink()
+                .is_some_and(|id| forgotten[usize::from(id.get())])
+            {
+                cell.set_hyperlink(None);
+            }
+        }
+    }
+
     pub fn write_contents(
         &self,
         contents: &mut String,

@@ -1056,20 +1056,32 @@ impl Screen {
 
 impl Screen {
     pub(crate) fn osc8(&mut self, link: Option<crate::Hyperlink>) {
-        self.hyperlink = link.and_then(|link| {
-            if self.hyperlinks.is_full() {
-                self.sweep_hyperlinks();
+        self.hyperlink = link.map(|link| {
+            if let Some(id) = self.hyperlinks.find(&link) {
+                return id;
             }
-            self.hyperlinks.intern(link)
+            if !self.hyperlinks.has_room(&link) {
+                self.make_hyperlink_room(&link);
+            }
+            self.hyperlinks.insert(link)
         });
     }
 
-    // forgets the hyperlinks no cell has any more
-    fn sweep_hyperlinks(&mut self) {
-        let mut in_use = vec![false; usize::from(u16::MAX) + 1];
+    #[cfg(test)]
+    pub(crate) fn hyperlink_table(&self) -> &crate::hyperlink::Hyperlinks {
+        &self.hyperlinks
+    }
+
+    fn make_hyperlink_room(&mut self, link: &crate::Hyperlink) {
+        let mut in_use = vec![false; self.hyperlinks.id_limit()];
         self.grid.mark_hyperlinks(&mut in_use);
         self.alternate_grid.mark_hyperlinks(&mut in_use);
-        self.hyperlinks.sweep(|id| in_use[usize::from(id.get())]);
+        let extra = link.uri().len() + link.id().map_or(0, str::len);
+        let evicted = self.hyperlinks.make_room(&in_use, extra);
+        if evicted.contains(&true) {
+            self.grid.forget_hyperlinks(&evicted);
+            self.alternate_grid.forget_hyperlinks(&evicted);
+        }
     }
 }
 

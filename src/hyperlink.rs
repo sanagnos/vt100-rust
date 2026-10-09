@@ -58,58 +58,144 @@ impl Hyperlink {
     }
 }
 
+// how many distinct hyperlinks are kept, and how many bytes of uris and ids.
+// a program can print any number of them (codex prints a url again each
+// time it grows while streaming), so the least recently used ones are
+// dropped, as tmux does (it keeps 5000).
+const MAX_LINKS: usize = 4096;
+const MAX_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone, Debug)]
+struct Entry {
+    link: Arc<Hyperlink>,
+    // when it was last opened, from Hyperlinks::clock
+    used: u64,
+}
+
 /// The hyperlinks currently in use, so that cells only need to store a
 /// small id rather than the full uri.
 #[derive(Clone, Debug, Default)]
 pub struct Hyperlinks {
-    links: Vec<Option<Arc<Hyperlink>>>,
+    links: Vec<Option<Entry>>,
     ids: std::collections::HashMap<Arc<Hyperlink>, NonZeroU16>,
     free: Vec<NonZeroU16>,
+    bytes: usize,
+    clock: u64,
+}
+
+fn size(link: &Hyperlink) -> usize {
+    link.uri.len() + link.id.as_ref().map_or(0, String::len)
 }
 
 impl Hyperlinks {
     pub fn get(&self, id: NonZeroU16) -> Option<&Hyperlink> {
         self.links
             .get(usize::from(id.get() - 1))
-            .and_then(Option::as_deref)
+            .and_then(Option::as_ref)
+            .map(|entry| &*entry.link)
     }
 
-    /// Returns the id for `link`, adding it if it isn't known yet. Returns
-    /// `None` if the table is full; `sweep` can make room.
-    pub fn intern(&mut self, link: Hyperlink) -> Option<NonZeroU16> {
-        if let Some(&id) = self.ids.get(&link) {
-            return Some(id);
+    /// Returns the id of `link` if it is known, marking it as just used.
+    pub fn find(&mut self, link: &Hyperlink) -> Option<NonZeroU16> {
+        let id = *self.ids.get(link)?;
+        self.clock += 1;
+        if let Some(entry) = &mut self.links[usize::from(id.get() - 1)] {
+            entry.used = self.clock;
         }
-        let id = if let Some(id) = self.free.pop() {
-            id
-        } else {
-            let id = u16::try_from(self.links.len() + 1).ok()?;
-            self.links.push(None);
-            // id is at least 1, since it is one past an index
-            NonZeroU16::new(id).unwrap()
-        };
-        let link = Arc::new(link);
-        self.links[usize::from(id.get() - 1)] = Some(Arc::clone(&link));
-        self.ids.insert(link, id);
         Some(id)
     }
 
-    pub fn is_full(&self) -> bool {
-        self.free.is_empty() && self.links.len() >= usize::from(u16::MAX)
+    fn len(&self) -> usize {
+        self.ids.len()
     }
 
-    /// Forgets every hyperlink whose id `in_use` doesn't return true for.
-    pub fn sweep(&mut self, in_use: impl Fn(NonZeroU16) -> bool) {
-        for (i, slot) in self.links.iter_mut().enumerate() {
-            // i is less than u16::MAX, since that is the most ids we hand out
-            let id = NonZeroU16::new(u16::try_from(i + 1).unwrap()).unwrap();
-            if slot.is_some() && !in_use(id) {
-                if let Some(link) = slot.take() {
-                    self.ids.remove(&link);
+    /// Whether `link` can be added without going over the limits.
+    pub fn has_room(&self, link: &Hyperlink) -> bool {
+        self.len() < MAX_LINKS && self.bytes + size(link) <= MAX_BYTES
+    }
+
+    /// Whether a quarter of each limit is free, so that making room isn't
+    /// needed again for a while.
+    fn roomy(&self, extra: usize) -> bool {
+        self.len() <= MAX_LINKS / 4 * 3
+            && self.bytes + extra <= MAX_BYTES / 4 * 3
+    }
+
+    /// Adds `link`, which must not be known yet; `has_room` must be true.
+    pub fn insert(&mut self, link: Hyperlink) -> NonZeroU16 {
+        let id = self.free.pop().unwrap_or_else(|| {
+            self.links.push(None);
+            // there are at most MAX_LINKS ids, and the first is 1
+            NonZeroU16::new(u16::try_from(self.links.len()).unwrap()).unwrap()
+        });
+        self.clock += 1;
+        self.bytes += size(&link);
+        let link = Arc::new(link);
+        self.links[usize::from(id.get() - 1)] = Some(Entry {
+            link: Arc::clone(&link),
+            used: self.clock,
+        });
+        self.ids.insert(link, id);
+        id
+    }
+
+    fn remove(&mut self, id: NonZeroU16) {
+        if let Some(entry) = self.links[usize::from(id.get() - 1)].take() {
+            self.bytes -= size(&entry.link);
+            self.ids.remove(&entry.link);
+            self.free.push(id);
+        }
+    }
+
+    fn ids(&self) -> impl Iterator<Item = NonZeroU16> + '_ {
+        self.links.iter().enumerate().filter_map(|(i, slot)| {
+            slot.as_ref()?;
+            // i + 1 is at most MAX_LINKS
+            NonZeroU16::new(u16::try_from(i + 1).unwrap())
+        })
+    }
+
+    /// Makes room for a link of `extra` bytes: forgets the hyperlinks no
+    /// cell has any more (`in_use` is indexed by id), then, if that isn't
+    /// enough, the least recently used ones. Returns the ids forgotten while
+    /// cells still had them, which those cells must drop.
+    pub fn make_room(&mut self, in_use: &[bool], extra: usize) -> Vec<bool> {
+        let unused: Vec<_> = self
+            .ids()
+            .filter(|id| !in_use[usize::from(id.get())])
+            .collect();
+        for id in unused {
+            self.remove(id);
+        }
+        let mut evicted = vec![false; in_use.len()];
+        if !self.roomy(extra) {
+            let mut by_age: Vec<_> = self
+                .ids()
+                .map(|id| {
+                    (
+                        self.links[usize::from(id.get() - 1)]
+                            .as_ref()
+                            .unwrap()
+                            .used,
+                        id,
+                    )
+                })
+                .collect();
+            by_age.sort_unstable();
+            for (_, id) in by_age {
+                if self.roomy(extra) {
+                    break;
                 }
-                self.free.push(id);
+                self.remove(id);
+                evicted[usize::from(id.get())] = true;
             }
         }
+        evicted
+    }
+
+    /// The size of an `in_use` table for `make_room`.
+    pub fn id_limit(&self) -> usize {
+        self.links.len() + 1
     }
 }
 
@@ -145,23 +231,104 @@ mod test {
     }
 
     #[test]
-    fn intern_and_sweep() {
+    fn find_insert_and_make_room() {
         let link = |uri: &str| Hyperlink {
             uri: uri.to_string(),
             id: None,
         };
         let mut links = Hyperlinks::default();
-        let a = links.intern(link("a")).unwrap();
-        let b = links.intern(link("b")).unwrap();
+        let a = links.insert(link("a"));
+        let b = links.insert(link("b"));
         assert_ne!(a, b);
-        assert_eq!(links.intern(link("a")), Some(a));
+        assert_eq!(links.find(&link("a")), Some(a));
+        assert_eq!(links.find(&link("c")), None);
         assert_eq!(links.get(b).unwrap().uri(), "b");
 
-        links.sweep(|id| id == b);
+        // only b is on the screen: a goes, and nothing has to be evicted
+        let mut in_use = vec![false; links.id_limit()];
+        in_use[usize::from(b.get())] = true;
+        assert!(!links.make_room(&in_use, 0).contains(&true));
         assert_eq!(links.get(a), None);
         assert_eq!(links.get(b).unwrap().uri(), "b");
-        let c = links.intern(link("c")).unwrap();
-        assert_eq!(c, a);
-        assert_eq!(links.intern(link("b")), Some(b));
+        assert_eq!(links.insert(link("c")), a);
+        assert_eq!(links.find(&link("b")), Some(b));
+    }
+
+    #[test]
+    fn evicts_the_least_recently_used() {
+        let mut links = Hyperlinks::default();
+        let ids: Vec<_> = (0..MAX_LINKS)
+            .map(|i| {
+                links.insert(Hyperlink {
+                    uri: format!("https://example.com/{i}"),
+                    id: None,
+                })
+            })
+            .collect();
+        let first = Hyperlink {
+            uri: "https://example.com/0".to_string(),
+            id: None,
+        };
+        // using the oldest makes it the newest
+        assert_eq!(links.find(&first), Some(ids[0]));
+        assert!(!links.has_room(&first));
+        let in_use = vec![true; links.id_limit()];
+        let evicted = links.make_room(&in_use, 10);
+        assert!(links.roomy(10));
+        assert_eq!(evicted.iter().filter(|&&e| e).count(), MAX_LINKS / 4);
+        assert!(!evicted[usize::from(ids[0].get())]);
+        assert!(evicted[usize::from(ids[1].get())]);
+        assert!(!evicted[usize::from(ids[MAX_LINKS - 1].get())]);
+        assert_eq!(links.get(ids[1]), None);
+        assert_eq!(links.get(ids[0]).unwrap().uri(), "https://example.com/0");
+    }
+
+    #[test]
+    fn stays_bounded_while_streaming() {
+        // as codex streams urls: each drawn again as it grows, and every
+        // version kept in the scrollback
+        let mut parser = crate::Parser::new(
+            crate::Parser::<()>::DEFAULT_ROWS,
+            crate::Parser::<()>::DEFAULT_COLS,
+            10_000,
+        );
+        let mut url = String::new();
+        for i in 0..10_000 {
+            url = format!(
+                "https://example.com/{}/{}",
+                i / 100,
+                "x".repeat(i % 100)
+            );
+            parser.process(
+                format!("\x1b]8;;{url}\x07link {i}\x1b]8;;\x07\r\n")
+                    .as_bytes(),
+            );
+            let table = parser.screen().hyperlink_table();
+            assert!(table.len() <= MAX_LINKS);
+            assert!(table.bytes <= MAX_BYTES);
+        }
+        // the newest links still work; the oldest were dropped from their
+        // cells rather than pointing at other links
+        assert_eq!(parser.screen().cell_hyperlink(22, 0).unwrap().uri(), url);
+        parser.screen_mut().set_scrollback(10_000);
+        let top = parser.screen().contents();
+        assert!(top.starts_with("link 0\n"), "{top:.20}");
+        assert_eq!(parser.screen().cell_hyperlink(0, 0), None);
+    }
+
+    #[test]
+    fn byte_budget() {
+        let mut links = Hyperlinks::default();
+        let long = |i: usize| Hyperlink {
+            uri: format!("https://example.com/{i}/{}", "a".repeat(8000)),
+            id: None,
+        };
+        let mut i = 0;
+        while links.has_room(&long(i)) {
+            links.insert(long(i));
+            i += 1;
+        }
+        assert!(i < 200);
+        assert!(links.bytes <= MAX_BYTES);
     }
 }
