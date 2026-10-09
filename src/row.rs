@@ -95,6 +95,12 @@ impl Row {
         other.clear(*other.attrs());
     }
 
+    pub fn mark_hyperlinks(&self, in_use: &mut [bool]) {
+        for id in self.cells.iter().filter_map(crate::Cell::hyperlink) {
+            in_use[usize::from(id.get())] = true;
+        }
+    }
+
     pub fn write_contents(
         &self,
         contents: &mut String,

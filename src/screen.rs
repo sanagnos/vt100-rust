@@ -59,6 +59,9 @@ pub struct Screen {
     attrs: crate::attrs::Attrs,
     saved_attrs: crate::attrs::Attrs,
 
+    hyperlink: Option<std::num::NonZeroU16>,
+    hyperlinks: crate::hyperlink::Hyperlinks,
+
     modes: u8,
     mouse_protocol_mode: MouseProtocolMode,
     mouse_protocol_encoding: MouseProtocolEncoding,
@@ -77,6 +80,9 @@ impl Screen {
 
             attrs: crate::attrs::Attrs::default(),
             saved_attrs: crate::attrs::Attrs::default(),
+
+            hyperlink: None,
+            hyperlinks: crate::hyperlink::Hyperlinks::default(),
 
             modes: 0,
             mouse_protocol_mode: MouseProtocolMode::default(),
@@ -535,6 +541,18 @@ impl Screen {
         self.grid().visible_cell(crate::grid::Pos { row, col })
     }
 
+    /// Returns the hyperlink of the cell at the given location in the
+    /// terminal, if it has one. Like [`cell`](Self::cell), this takes the
+    /// scrollback offset into account.
+    #[must_use]
+    pub fn cell_hyperlink(
+        &self,
+        row: u16,
+        col: u16,
+    ) -> Option<&crate::Hyperlink> {
+        self.hyperlinks.get(self.cell(row, col)?.hyperlink()?)
+    }
+
     /// Returns whether the text in row `row` should wrap to the next line.
     #[must_use]
     pub fn row_wrapped(&self, row: u16) -> bool {
@@ -595,6 +613,12 @@ impl Screen {
     #[must_use]
     pub fn bgcolor(&self) -> crate::Color {
         self.attrs.bgcolor
+    }
+
+    /// Returns the hyperlink newly drawn text will have, if one is open.
+    #[must_use]
+    pub fn hyperlink(&self) -> Option<&crate::Hyperlink> {
+        self.hyperlinks.get(self.hyperlink?)
     }
 
     /// Returns whether newly drawn text should be rendered with the bold text
@@ -706,6 +730,7 @@ impl Screen {
         let pos = self.grid().pos();
         let size = self.grid().size();
         let attrs = self.attrs;
+        let hyperlink = self.hyperlink;
 
         let width = c.width();
         if width.is_none() && (u32::from(c)) < 256 {
@@ -880,6 +905,7 @@ impl Screen {
                 // that self.grid().pos().col has a valid value.
                 .unwrap();
             cell.set(c, attrs);
+            cell.set_hyperlink(hyperlink);
             self.grid_mut().col_inc(1);
             if width > 1 {
                 let pos = self.grid().pos();
@@ -936,9 +962,27 @@ impl Screen {
                     .unwrap();
                 next_cell.clear(crate::attrs::Attrs::default());
                 next_cell.set_wide_continuation(true);
+                next_cell.set_hyperlink(hyperlink);
                 self.grid_mut().col_inc(1);
             }
         }
+    }
+
+    pub(crate) fn osc8(&mut self, link: Option<crate::Hyperlink>) {
+        self.hyperlink = link.and_then(|link| {
+            if self.hyperlinks.is_full() {
+                self.sweep_hyperlinks();
+            }
+            self.hyperlinks.intern(link)
+        });
+    }
+
+    // forgets the hyperlinks no cell has any more
+    fn sweep_hyperlinks(&mut self) {
+        let mut in_use = vec![false; usize::from(u16::MAX) + 1];
+        self.grid.mark_hyperlinks(&mut in_use);
+        self.alternate_grid.mark_hyperlinks(&mut in_use);
+        self.hyperlinks.sweep(|id| in_use[usize::from(id.get())]);
     }
 
     // control codes

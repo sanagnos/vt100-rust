@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+* Support for OSC 8 hyperlinks. Each cell keeps the hyperlink it was written
+  with, so links scroll into the scrollback with their text. See
+  `Screen::cell_hyperlink`, `Screen::hyperlink` and `Hyperlink`.
+
+### Changed
+
+* OSC 8 no longer goes to `Callbacks::unhandled_osc` (unless it is
+  malformed).
+* A cell holds two bytes fewer of combining characters, to make room for its
+  hyperlink while keeping cells 32 bytes.
+
 ## [0.16.2] - 2025-07-11
 
 ### Fixed

@@ -123,6 +123,12 @@ impl Grid {
         self.origin_mode = self.saved_origin_mode;
     }
 
+    pub fn mark_hyperlinks(&self, in_use: &mut [bool]) {
+        for row in self.scrollback.iter().chain(&self.rows) {
+            row.mark_hyperlinks(in_use);
+        }
+    }
+
     pub fn visible_rows(&self) -> impl Iterator<Item = &crate::row::Row> {
         let scrollback_len = self.scrollback.len();
         let rows_len = self.rows.len();
