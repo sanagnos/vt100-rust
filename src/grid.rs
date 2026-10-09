@@ -194,9 +194,10 @@ impl Grid {
         self.origin_mode = self.saved_origin_mode;
     }
 
-    pub fn mark_hyperlinks(&self, in_use: &mut [bool]) {
-        let scrollback = self.scrollback.iter().flat_map(|s| s.rows.iter());
-        for row in scrollback.chain(&self.rows) {
+    pub fn mark_hyperlinks(&mut self, in_use: &mut [bool]) {
+        let scrollback =
+            self.scrollback.iter_mut().flat_map(|s| s.rows.iter_mut());
+        for row in scrollback.chain(&mut self.rows) {
             row.mark_hyperlinks(in_use);
         }
     }

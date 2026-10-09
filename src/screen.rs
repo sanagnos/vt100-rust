@@ -688,6 +688,17 @@ impl Screen {
         self.hyperlinks.get(self.cell(row, col)?.hyperlink()?)
     }
 
+    /// Returns whether a cell in row `row` may have a hyperlink. When it
+    /// returns false, none does, so the row can be skipped when looking for
+    /// links. Like [`cell`](Self::cell), this takes the scrollback offset
+    /// into account.
+    #[must_use]
+    pub fn row_has_hyperlinks(&self, row: u16) -> bool {
+        self.grid()
+            .visible_row(row)
+            .is_some_and(crate::row::Row::has_hyperlinks)
+    }
+
     /// Returns whether the text in row `row` should wrap to the next line.
     #[must_use]
     pub fn row_wrapped(&self, row: u16) -> bool {
@@ -965,6 +976,13 @@ impl Screen {
                 .drawing_cell_mut(new_pos)
                 .unwrap()
                 .set_hyperlink(hyperlink);
+            if hyperlink.is_some() {
+                self.grid_mut()
+                    .drawing_row_mut(new_pos.row)
+                    // new_pos comes from col_wrap, which leaves a valid one
+                    .unwrap()
+                    .add_hyperlink();
+            }
             self.grid_mut()
                 .drawing_cell_mut(old_pos)
                 .unwrap()
@@ -1161,6 +1179,14 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
                 .drawing_cell_mut(base_pos)
                 .unwrap()
                 .set_hyperlink(hyperlink);
+            if hyperlink.is_some() {
+                screen
+                    .grid_mut()
+                    .drawing_row_mut(base_pos.row)
+                    // base_pos always comes from a valid position
+                    .unwrap()
+                    .add_hyperlink();
+            }
             screen.last_char = Some(c);
             screen.grid_mut().col_inc(width);
         } else {

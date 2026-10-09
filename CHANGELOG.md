@@ -10,6 +10,8 @@
   4096 distinct links (and 1 MiB of their uris) are kept; past that, links
   no cell has are forgotten, then the least recently used ones, whose cells
   lose them.
+* `Screen::row_has_hyperlinks`, to skip the rows without links when looking
+  for them.
 
 ### Changed
 

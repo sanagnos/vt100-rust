@@ -5,6 +5,10 @@ use alloc::{string::String, vec::Vec};
 pub struct Row {
     cells: Vec<crate::Cell>,
     wrapped: bool,
+    // whether a cell may have a hyperlink: set when one is written, and
+    // cleared when the row is cleared or its cells are checked, so that rows
+    // without links can be skipped
+    hyperlinks: bool,
 }
 
 impl Row {
@@ -12,6 +16,7 @@ impl Row {
         Self {
             cells: vec![crate::Cell::new(); usize::from(cols)],
             wrapped: false,
+            hyperlinks: false,
         }
     }
 
@@ -28,6 +33,7 @@ impl Row {
             cell.clear(attrs);
         }
         self.wrapped = false;
+        self.hyperlinks = false;
     }
 
     pub fn reset(&mut self) {
@@ -194,13 +200,29 @@ impl Row {
         other.clear(*other.attrs());
     }
 
-    pub fn mark_hyperlinks(&self, in_use: &mut [bool]) {
+    pub fn has_hyperlinks(&self) -> bool {
+        self.hyperlinks
+    }
+
+    pub fn add_hyperlink(&mut self) {
+        self.hyperlinks = true;
+    }
+
+    pub fn mark_hyperlinks(&mut self, in_use: &mut [bool]) {
+        if !self.hyperlinks {
+            return;
+        }
+        self.hyperlinks = false;
         for id in self.cells.iter().filter_map(crate::Cell::hyperlink) {
             in_use[usize::from(id.get())] = true;
+            self.hyperlinks = true;
         }
     }
 
     pub fn forget_hyperlinks(&mut self, forgotten: &[bool]) {
+        if !self.hyperlinks {
+            return;
+        }
         for cell in &mut self.cells {
             if cell
                 .hyperlink()
