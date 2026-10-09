@@ -56,6 +56,7 @@ mod callbacks;
 pub mod capture;
 mod cell;
 mod grid;
+mod hyperlink;
 mod parser;
 mod perform;
 mod row;
@@ -65,6 +66,7 @@ mod term;
 pub use attrs::Color;
 pub use callbacks::Callbacks;
 pub use cell::Cell;
+pub use hyperlink::Hyperlink;
 pub use parser::Parser;
 pub use screen::{
     CursorStyle, MouseProtocolEncoding, MouseProtocolMode, Screen,

@@ -222,6 +222,15 @@ impl<CB: crate::Callbacks> vte::Perform for crate::screen::WrappedScreen<CB> {
                     }
                 }
             }
+            [b"8", link @ ..] => {
+                match crate::hyperlink::Hyperlink::parse(link) {
+                    Ok(link) => self.screen.osc8(link),
+                    Err(()) => {
+                        self.callbacks
+                            .unhandled_osc(&mut self.screen, params);
+                    }
+                }
+            }
             _ => {
                 self.callbacks.unhandled_osc(&mut self.screen, params);
             }

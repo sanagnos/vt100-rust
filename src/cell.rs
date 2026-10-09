@@ -1,7 +1,7 @@
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 // chosen to make the size of the cell struct 32 bytes
-const CONTENT_BYTES: usize = 22;
+const CONTENT_BYTES: usize = 20;
 
 const IS_WIDE: u8 = 0b1000_0000;
 const IS_WIDE_CONTINUATION: u8 = 0b0100_0000;
@@ -13,6 +13,7 @@ pub struct Cell {
     contents: [u8; CONTENT_BYTES],
     len: u8,
     attrs: crate::attrs::Attrs,
+    hyperlink: Option<std::num::NonZeroU16>,
 }
 const _: () = assert!(core::mem::size_of::<Cell>() == 32);
 
@@ -21,7 +22,7 @@ impl PartialEq<Self> for Cell {
         if self.len != other.len {
             return false;
         }
-        if self.attrs != other.attrs {
+        if self.attrs != other.attrs || self.hyperlink != other.hyperlink {
             return false;
         }
         let len = self.len();
@@ -37,6 +38,7 @@ impl Cell {
             contents: [0; CONTENT_BYTES],
             len: 0,
             attrs: crate::attrs::Attrs::new(),
+            hyperlink: None,
         }
     }
 
@@ -51,6 +53,7 @@ impl Cell {
         // character to determine the cell width
         self.set_wide(c.width().unwrap_or(1) > 1);
         self.attrs = a;
+        self.hyperlink = None;
     }
 
     pub(crate) fn append(&mut self, c: char) {
@@ -94,6 +97,18 @@ impl Cell {
     pub(crate) fn clear(&mut self, attrs: crate::attrs::Attrs) {
         self.len = 0;
         self.attrs = attrs;
+        self.hyperlink = None;
+    }
+
+    pub(crate) fn hyperlink(&self) -> Option<std::num::NonZeroU16> {
+        self.hyperlink
+    }
+
+    pub(crate) fn set_hyperlink(
+        &mut self,
+        hyperlink: Option<std::num::NonZeroU16>,
+    ) {
+        self.hyperlink = hyperlink;
     }
 
     /// Returns the text contents of the cell.

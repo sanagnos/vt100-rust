@@ -194,6 +194,13 @@ impl Grid {
         self.origin_mode = self.saved_origin_mode;
     }
 
+    pub fn mark_hyperlinks(&self, in_use: &mut [bool]) {
+        let scrollback = self.scrollback.iter().flat_map(|s| s.rows.iter());
+        for row in scrollback.chain(&self.rows) {
+            row.mark_hyperlinks(in_use);
+        }
+    }
+
     pub fn visible_rows(&self) -> impl Iterator<Item = &crate::row::Row> {
         self.scrollback
             .as_ref()
