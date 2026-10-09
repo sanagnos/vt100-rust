@@ -123,8 +123,8 @@ impl Grid {
         self.origin_mode = self.saved_origin_mode;
     }
 
-    pub fn mark_hyperlinks(&self, in_use: &mut [bool]) {
-        for row in self.scrollback.iter().chain(&self.rows) {
+    pub fn mark_hyperlinks(&mut self, in_use: &mut [bool]) {
+        for row in self.scrollback.iter_mut().chain(&mut self.rows) {
             row.mark_hyperlinks(in_use);
         }
     }

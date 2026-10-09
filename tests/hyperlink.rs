@@ -295,3 +295,33 @@ fn many_links() {
         Some("https://example.com/69999")
     );
 }
+
+#[test]
+fn row_has_hyperlinks() {
+    let mut parser = vt100::Parser::new(3, 20, 10);
+    parser.process(
+        b"plain\r\n\x1b]8;;https://example.com/\x07link\x1b]8;;\x07\r\n",
+    );
+    assert!(!parser.screen().row_has_hyperlinks(0));
+    assert!(parser.screen().row_has_hyperlinks(1));
+    assert!(!parser.screen().row_has_hyperlinks(2));
+    assert!(!parser.screen().row_has_hyperlinks(3));
+
+    // a wide character's second half is on the same row
+    parser.process(
+        "\x1b]8;;https://example.com/w\x07日\x1b]8;;\x07".as_bytes(),
+    );
+    assert!(parser.screen().row_has_hyperlinks(2));
+
+    // the scrollback offset is taken into account
+    parser.process(b"\r\nmore");
+    assert!(parser.screen().row_has_hyperlinks(0));
+    parser.screen_mut().set_scrollback(1);
+    assert!(!parser.screen().row_has_hyperlinks(0));
+    assert!(parser.screen().row_has_hyperlinks(1));
+    parser.screen_mut().set_scrollback(0);
+
+    // a cleared row has none
+    parser.process(b"\x1b[1;1H\x1b[2K");
+    assert!(!parser.screen().row_has_hyperlinks(0));
+}
