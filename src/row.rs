@@ -12,8 +12,13 @@ pub struct Row {
 
 impl Row {
     pub fn new(cols: u16) -> Self {
+        Self::blank(cols, crate::attrs::Attrs::default())
+    }
+
+    // a row of blank cells as an erase leaves them (see Cell::clear)
+    pub fn blank(cols: u16, attrs: crate::attrs::Attrs) -> Self {
         Self {
-            cells: vec![crate::Cell::new(); usize::from(cols)],
+            cells: vec![crate::Cell::blank(attrs); usize::from(cols)],
             wrapped: false,
             hyperlinks: false,
         }

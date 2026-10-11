@@ -511,9 +511,14 @@ fn diff_basic() {
         &screen3, &screen4,
     );
 
+    // the erased cell keeps no attributes, so the diff resets them before
+    // the erase and restores the current ones after it
     parser.process(b"\x1b[1;8H\x1b[X");
     let screen5 = parser.screen().clone();
-    assert_eq!(screen5.contents_diff(&screen4), b"\x1b[1;8H\x1b[X");
+    assert_eq!(
+        screen5.contents_diff(&screen4),
+        b"\x1b[1;8H\x1b[m\x1b[X\x1b[32m"
+    );
     helpers::assert_contents_diff_reproduces_state_from_screens(
         &screen4, &screen5,
     );

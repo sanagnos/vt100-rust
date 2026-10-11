@@ -20,6 +20,15 @@
 * A cell holds two bytes fewer of combining characters, to make room for its
   hyperlink while keeping cells 32 bytes.
 
+### Fixed
+
+* Erased cells (`EL`, `ED`, `ECH`) keep only the current background colour,
+  as in xterm and most other terminals: bold, dim, italic, underline, inverse
+  and the foreground colour no longer land on blank cells, so an underline
+  doesn't stretch across cleared space. The blank cells that `ICH`, `DCH`,
+  `IL`, `DL`, `SU`, `SD` and scrolling make take the current background
+  colour too, where they took none.
+
 ## [0.16.2] - 2025-07-11
 
 ### Fixed

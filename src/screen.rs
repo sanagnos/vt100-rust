@@ -778,7 +778,7 @@ impl Screen {
                 wrap = true;
             }
         }
-        self.grid_mut().col_wrap(width, wrap);
+        self.grid_mut().col_wrap(width, wrap, attrs);
         let pos = self.grid().pos();
 
         if width == 0 {
@@ -1026,7 +1026,8 @@ impl Screen {
     }
 
     pub(crate) fn lf(&mut self) {
-        self.grid_mut().row_inc_scroll(1);
+        let attrs = self.attrs;
+        self.grid_mut().row_inc_scroll(1, attrs);
     }
 
     pub(crate) fn vt(&mut self) {
@@ -1065,7 +1066,8 @@ impl Screen {
 
     // ESC M
     pub(crate) fn ri(&mut self) {
-        self.grid_mut().row_dec_scroll(1);
+        let attrs = self.attrs;
+        self.grid_mut().row_dec_scroll(1, attrs);
     }
 
     // ESC c
@@ -1077,7 +1079,8 @@ impl Screen {
 
     // CSI @
     pub(crate) fn ich(&mut self, count: u16) {
-        self.grid_mut().insert_cells(count);
+        let attrs = self.attrs;
+        self.grid_mut().insert_cells(count, attrs);
     }
 
     // CSI A
@@ -1175,27 +1178,32 @@ impl Screen {
 
     // CSI L
     pub(crate) fn il(&mut self, count: u16) {
-        self.grid_mut().insert_lines(count);
+        let attrs = self.attrs;
+        self.grid_mut().insert_lines(count, attrs);
     }
 
     // CSI M
     pub(crate) fn dl(&mut self, count: u16) {
-        self.grid_mut().delete_lines(count);
+        let attrs = self.attrs;
+        self.grid_mut().delete_lines(count, attrs);
     }
 
     // CSI P
     pub(crate) fn dch(&mut self, count: u16) {
-        self.grid_mut().delete_cells(count);
+        let attrs = self.attrs;
+        self.grid_mut().delete_cells(count, attrs);
     }
 
     // CSI S
     pub(crate) fn su(&mut self, count: u16) {
-        self.grid_mut().scroll_up(count);
+        let attrs = self.attrs;
+        self.grid_mut().scroll_up(count, attrs);
     }
 
     // CSI T
     pub(crate) fn sd(&mut self, count: u16) {
-        self.grid_mut().scroll_down(count);
+        let attrs = self.attrs;
+        self.grid_mut().scroll_down(count, attrs);
     }
 
     // CSI X
