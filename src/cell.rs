@@ -42,6 +42,13 @@ impl Cell {
         }
     }
 
+    // a blank cell as an erase leaves one (see clear)
+    pub(crate) fn blank(attrs: crate::attrs::Attrs) -> Self {
+        let mut cell = Self::new();
+        cell.clear(attrs);
+        cell
+    }
+
     fn len(&self) -> usize {
         usize::from(self.len & LEN_BITS)
     }
@@ -94,9 +101,16 @@ impl Cell {
         }
     }
 
+    // a cleared cell keeps only the background colour of attrs, as the cells
+    // an erase, an insert or a scroll blanks do in xterm (back colour erase)
+    // and most other terminals: were the rest kept, an underline or inverse
+    // video would show across the blank space
     pub(crate) fn clear(&mut self, attrs: crate::attrs::Attrs) {
         self.len = 0;
-        self.attrs = attrs;
+        self.attrs = crate::attrs::Attrs {
+            bgcolor: attrs.bgcolor,
+            ..crate::attrs::Attrs::default()
+        };
         self.hyperlink = None;
     }
 

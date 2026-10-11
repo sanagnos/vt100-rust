@@ -13,8 +13,13 @@ pub struct Row {
 
 impl Row {
     pub fn new(cols: u16) -> Self {
+        Self::blank(cols, crate::attrs::Attrs::default())
+    }
+
+    // a row of blank cells as an erase leaves them (see Cell::clear)
+    pub fn blank(cols: u16, attrs: crate::attrs::Attrs) -> Self {
         Self {
-            cells: vec![crate::Cell::new(); usize::from(cols)],
+            cells: vec![crate::Cell::blank(attrs); usize::from(cols)],
             wrapped: false,
             hyperlinks: false,
         }
@@ -36,9 +41,11 @@ impl Row {
         self.hyperlinks = false;
     }
 
-    pub fn reset(&mut self) {
-        self.cells.fill(crate::Cell::new());
+    // blank cells as an erase leaves them (see Cell::clear)
+    pub fn reset(&mut self, attrs: crate::attrs::Attrs) {
+        self.cells.fill(crate::Cell::blank(attrs));
         self.wrapped = false;
+        self.hyperlinks = false;
     }
 
     fn cells(&self) -> impl Iterator<Item = &crate::Cell> {
@@ -56,7 +63,7 @@ impl Row {
     /// Inserts empty cells without changing the size of the row.
     ///
     /// Cells at the end are dropped.
-    pub fn insert(&mut self, i: u16, count: u16) {
+    pub fn insert(&mut self, i: u16, count: u16, attrs: crate::attrs::Attrs) {
         let count = usize::from(count).min(self.cells.len() - usize::from(i));
         if count == 0 {
             // Always "truncate", even when `count` is 0. However, because we
@@ -77,7 +84,7 @@ impl Row {
 
         let slice = &mut self.cells[usize::from(i)..];
         slice.rotate_right(count);
-        slice[..count].fill(crate::Cell::new());
+        slice[..count].fill(crate::Cell::blank(attrs));
         if is_wide_continuation {
             self.get_mut(i).unwrap().set_wide_continuation(true);
         }
@@ -87,7 +94,11 @@ impl Row {
     /// Removes cells without changing the size of the row.
     ///
     /// Empty cells are added to the end.
-    pub fn remove(&mut self, range: core::ops::Range<u16>) {
+    pub fn remove(
+        &mut self,
+        range: core::ops::Range<u16>,
+        attrs: crate::attrs::Attrs,
+    ) {
         self.wrapped = false;
         if range.start >= range.end {
             return;
@@ -101,7 +112,7 @@ impl Row {
 
         let count = usize::from(range.end - range.start);
         let slice = &mut self.cells[usize::from(range.start)..];
-        slice[..count].fill(crate::Cell::new());
+        slice[..count].fill(crate::Cell::blank(attrs));
         slice.rotate_left(count);
     }
 

@@ -198,7 +198,9 @@ fn a_capture_matches_a_screen_tall_enough_to_hold_everything() {
 
 #[test]
 fn a_capture_matches_a_tall_screen_when_fed_in_arbitrary_chunks() {
-    let data: &[u8] = b"\x1b[36;44malpha beta gamma\r\ndelta\r\n\
+    // the background is reset before the first line break: rows scrolled in
+    // while one is set take it, as in xterm, which a tall screen never does
+    let data: &[u8] = b"\x1b[36;44malpha beta gamma\x1b[49m\r\ndelta\r\n\
         \x1b[3mepsilon zeta\r\n\x1b[23;1meta\r\ntheta iota kappa\r\n\x1b[mmu";
     let expected = tall(20, 7, data);
     for chunk in 1..=data.len() {
@@ -701,7 +703,9 @@ fn rows_of_a_capture_match_the_rows_of_a_tall_screen() {
 
 #[test]
 fn rows_of_a_capture_match_a_tall_screen_for_every_screen_width() {
-    let data = "\x1b[36;44malpha beta\r\n\x1b[3mgamma delta\r\n\
+    // no background here: the rows a narrow screen scrolls in while one is set
+    // take it, which a tall screen's rows never do
+    let data = "\x1b[36malpha beta\r\n\x1b[3mgamma delta\r\n\
         \x1b[23muo\u{308}mlaut\r\nwide \x1b[1mあ\u{17d8}い\x1b[m\r\nlast"
         .as_bytes();
     for cols in 3..=20 {

@@ -1162,7 +1162,7 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
         if width > 0 {
             let wrap = screen.new_character_should_wrap(width);
             let on_row = Self::on_row(screen, &mut self.callbacks);
-            screen.grid_mut().col_wrap(width, wrap, on_row);
+            screen.grid_mut().col_wrap(width, wrap, attrs, on_row);
             // col_wrap always sets self.grid().pos() to a valid cell
             base_pos = screen.grid().pos();
             cell_was_wide =
@@ -1227,7 +1227,7 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
                 screen.grid().drawing_cell(base_pos).unwrap().is_wide();
             if !cell_was_wide && cell_is_wide {
                 let on_row = Self::on_row(screen, &mut self.callbacks);
-                screen.grid_mut().col_wrap(1, false, on_row);
+                screen.grid_mut().col_wrap(1, false, attrs, on_row);
                 // col_wrap always leaves self.grid().pos() on a valid cell,
                 // so .drawing_cell(new_pos).unwrap() will always be valid.
                 let new_pos = screen.grid().pos();
@@ -1255,8 +1255,9 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
     }
 
     pub fn lf(&mut self) {
+        let attrs = self.screen.attrs;
         let on_row = Self::on_row(&self.screen, &mut self.callbacks);
-        self.screen.grid_mut().row_inc_scroll(1, on_row);
+        self.screen.grid_mut().row_inc_scroll(1, attrs, on_row);
     }
 
     pub fn vt(&mut self) {
@@ -1295,7 +1296,8 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
 
     // ESC M
     pub fn ri(&mut self) {
-        self.screen.grid_mut().row_dec_scroll(1);
+        let attrs = self.screen.attrs;
+        self.screen.grid_mut().row_dec_scroll(1, attrs);
     }
 
     // ESC c
@@ -1328,7 +1330,8 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
 
     // CSI @
     pub fn ich(&mut self, count: u16) {
-        self.screen.grid_mut().insert_cells(count);
+        let attrs = self.screen.attrs;
+        self.screen.grid_mut().insert_cells(count, attrs);
     }
 
     // CSI A
@@ -1428,28 +1431,33 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
 
     // CSI L
     pub fn il(&mut self, count: u16) {
-        self.screen.grid_mut().insert_lines(count);
+        let attrs = self.screen.attrs;
+        self.screen.grid_mut().insert_lines(count, attrs);
     }
 
     // CSI M
     pub fn dl(&mut self, count: u16) {
-        self.screen.grid_mut().delete_lines(count);
+        let attrs = self.screen.attrs;
+        self.screen.grid_mut().delete_lines(count, attrs);
     }
 
     // CSI P
     pub fn dch(&mut self, count: u16) {
-        self.screen.grid_mut().delete_cells(count);
+        let attrs = self.screen.attrs;
+        self.screen.grid_mut().delete_cells(count, attrs);
     }
 
     // CSI S
     pub fn su(&mut self, count: u16) {
+        let attrs = self.screen.attrs;
         let on_row = Self::on_row(&self.screen, &mut self.callbacks);
-        self.screen.grid_mut().scroll_up(count, on_row);
+        self.screen.grid_mut().scroll_up(count, attrs, on_row);
     }
 
     // CSI T
     pub fn sd(&mut self, count: u16) {
-        self.screen.grid_mut().scroll_down(count);
+        let attrs = self.screen.attrs;
+        self.screen.grid_mut().scroll_down(count, attrs);
     }
 
     // CSI X
