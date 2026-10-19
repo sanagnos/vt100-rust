@@ -12,6 +12,53 @@ fn origin_mode() {
     helpers::fixture("origin_mode");
 }
 
+// rows moved into scrollback drop their trailing blank cells, which must not
+// show: every cell reads back the same, also after the screen is resized
+#[test]
+fn scrollback_rows_read_back_the_same() {
+    let mut parser = vt100::Parser::new(3, 20, 10);
+    parser.process(
+        "\x1b[1ma\x1b[m 中 \x1b[44m\x1b[K\r\n\x1b[m\x1b]8;;https://example.com/\x1b\\ \x1b]8;;\x1b\\\x1b[3m \x1b[m\r\n"
+            .as_bytes(),
+    );
+    let before = cells(parser.screen(), 2);
+    let (text, formatted) = (
+        parser.screen().contents(),
+        parser.screen().contents_formatted(),
+    );
+
+    parser.process(b"\r\n\r\n");
+    parser.screen_mut().set_scrollback(2);
+    assert_eq!(cells(parser.screen(), 2), before);
+    assert_eq!(
+        parser
+            .screen()
+            .cell_hyperlink(1, 0)
+            .map(vt100::Hyperlink::uri),
+        Some("https://example.com/")
+    );
+    assert_eq!(parser.screen().contents(), text);
+    assert_eq!(parser.screen().contents_formatted(), formatted);
+
+    // scrollback keeps the width rows had: each reads to its own end
+    parser.screen_mut().set_size(3, 30);
+    parser.screen_mut().set_scrollback(2);
+    assert_eq!(cells(parser.screen(), 2), before);
+    parser.screen_mut().set_size(3, 10);
+    parser.screen_mut().set_scrollback(2);
+    assert_eq!(cells(parser.screen(), 2), before);
+}
+
+fn cells(screen: &vt100::Screen, rows: u16) -> Vec<Vec<vt100::Cell>> {
+    (0..rows)
+        .map(|row| {
+            (0..)
+                .map_while(|col| screen.cell(row, col).cloned())
+                .collect()
+        })
+        .collect()
+}
+
 #[test]
 fn scrollback() {
     let mut parser = vt100::Parser::new(24, 80, 10);

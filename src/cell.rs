@@ -17,6 +17,9 @@ pub struct Cell {
 }
 const _: () = assert!(std::mem::size_of::<Cell>() == 32);
 
+// what a trimmed row's dropped cells read as (see Row::trim)
+pub static DEFAULT: Cell = Cell::new();
+
 impl PartialEq<Self> for Cell {
     fn eq(&self, other: &Self) -> bool {
         if self.len != other.len {
@@ -31,11 +34,15 @@ impl PartialEq<Self> for Cell {
 }
 
 impl Cell {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
-            contents: Default::default(),
+            contents: [0; CONTENT_BYTES],
             len: 0,
-            attrs: crate::attrs::Attrs::default(),
+            attrs: crate::attrs::Attrs {
+                fgcolor: crate::Color::Default,
+                bgcolor: crate::Color::Default,
+                mode: 0,
+            },
             hyperlink: None,
         }
     }

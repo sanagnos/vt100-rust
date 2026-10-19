@@ -19,6 +19,10 @@
   malformed).
 * A cell holds two bytes fewer of combining characters, to make room for its
   hyperlink while keeping cells 32 bytes.
+* Rows moving into the scrollback keep only their cells up to the last one
+  that isn't blank with default attributes, and keep their width: the rest
+  read as blank cells, so nothing changes for callers, and a long scrollback
+  of short lines takes a fraction of the memory.
 
 ### Fixed
 

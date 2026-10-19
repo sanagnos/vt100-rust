@@ -576,13 +576,14 @@ impl Grid {
 
     pub fn scroll_up(&mut self, count: u16, attrs: crate::attrs::Attrs) {
         for _ in 0..(count.min(self.size.rows - self.scroll_top)) {
-            self.rows.insert(
-                usize::from(self.scroll_bottom) + 1,
-                self.new_row(attrs),
-            );
-            let removed = self.rows.remove(usize::from(self.scroll_top));
+            let mut removed = self.rows.remove(usize::from(self.scroll_top));
             if self.scrollback_len > 0 && !self.scroll_region_active() {
-                self.scrollback.push_back(removed);
+                // the row goes into the scrollback as a trimmed copy, and its
+                // cells are the new row's: one small allocation a line, not a
+                // full row and a small one, which fragment the heap
+                self.scrollback.push_back(removed.trimmed());
+                removed.clear(attrs);
+                self.rows.insert(usize::from(self.scroll_bottom), removed);
                 while self.scrollback.len() > self.scrollback_len {
                     self.scrollback.pop_front();
                 }
@@ -590,6 +591,11 @@ impl Grid {
                     self.scrollback_offset =
                         self.scrollback.len().min(self.scrollback_offset + 1);
                 }
+            } else {
+                self.rows.insert(
+                    usize::from(self.scroll_bottom),
+                    self.new_row(attrs),
+                );
             }
         }
     }
