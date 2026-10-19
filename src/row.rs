@@ -168,16 +168,25 @@ impl Row {
         }
     }
 
-    /// Trims trailing blank cells from the row.
-    pub fn trim(&mut self) {
-        let excess = self
+    /// A copy of the row without its trailing blank cells, in an allocation
+    /// of its own.
+    ///
+    /// Trimming a row in place frees the tail of its allocation, but not to
+    /// the system: the next row is too big for the gap, and a long scrollback
+    /// of them takes about as much memory as one of untrimmed rows. The
+    /// copy's allocation is small, so the freed ones are reused whole, and
+    /// the original row can be reset and kept as the new blank row.
+    pub fn trimmed(&self) -> Self {
+        let len = self
             .cells
             .iter()
-            .rev()
-            .take_while(|c| **c == crate::cell::Cell::DEFAULT)
-            .count();
-        self.cells.truncate(self.cells.len() - excess);
-        self.cells.shrink_to_fit();
+            .rposition(|c| *c != crate::cell::Cell::DEFAULT)
+            .map_or(0, |i| i + 1);
+        Self {
+            cells: self.cells[..len].to_vec(),
+            wrapped: self.wrapped,
+            hyperlinks: self.hyperlinks,
+        }
     }
 
     pub fn wrap(&mut self, wrap: bool) {

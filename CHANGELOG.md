@@ -20,6 +20,13 @@
 * A cell holds two bytes fewer of combining characters, to make room for its
   hyperlink while keeping cells 32 bytes.
 
+* Rows moving into the scrollback are copied, trimmed, into an allocation of
+  their own, and the outgoing row is kept as the new blank row, rather than
+  trimmed in place. Trimming in place left gaps no later row fitted in, so a
+  full scrollback of 10,000 rows took as much memory as before: with the copy,
+  about 15 MB instead of 24 MB at 77 columns, and 19 MB instead of 46 MB at 147
+  (resident memory, for one stream of `git log -p` text).
+
 ### Fixed
 
 * Erased cells (`EL`, `ED`, `ECH`) keep only the current background colour,

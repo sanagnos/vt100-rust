@@ -723,7 +723,6 @@ impl Grid {
 
         // Number of to-be-removed rows.
         let num_removed = count.min(num_between);
-        let new_row = || crate::row::Row::blank(self.size.cols(), attrs);
 
         if let Some(scrollback) =
             self.scrollback.as_mut().filter(|_| scrollback_enabled)
@@ -753,8 +752,9 @@ impl Grid {
 
             scrollback.rows.extend(
                 between[num_reset..num_removed].iter_mut().map(|row| {
-                    row.trim();
-                    core::mem::replace(row, new_row())
+                    let trimmed = row.trimmed();
+                    row.reset(attrs);
+                    trimmed
                 }),
             );
 
