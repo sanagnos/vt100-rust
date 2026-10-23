@@ -42,6 +42,12 @@
   columns went from 23 MB to 52 MB resident. The rows in view are now
   copies, grown, kept only while scrolled back, and the same read leaves
   23 MB.
+* An emoji that VS16 widens in the bottom-right cell no longer leaves half of
+  itself in the last column of the row above. The wrap that moves it to the
+  next row scrolls the screen, so the cell it was written in moves up a row,
+  but the old position was cleared instead: the row above kept a wide cell
+  with no continuation, and the next write to its last column panicked.
+  Writing near a cell missing its continuation no longer panics either.
 
 ## [0.18.1] - 2026-10-19
 

@@ -953,44 +953,46 @@ impl Screen {
 
     // if we already have a character in a cell, but adding a continuation
     // character widened the cell off the end of the row, we need to move the
-    // base character to the beginning of the next row
-    fn wrap_widened_cell(
+    // base character to the beginning of the next row. it leaves its cell
+    // before the wrap, which may scroll that cell up a row or off the screen.
+    // returns where the base character is.
+    fn wrap_widened_cell<F>(
         &mut self,
-        old_pos: crate::grid::Pos,
-        new_pos: crate::grid::Pos,
-    ) {
-        if new_pos.col == 0 {
-            let attrs = self.attrs;
-            let contents = self
-                .grid()
-                .drawing_cell(old_pos)
-                .unwrap()
-                .contents()
-                .to_string();
-            self.grid_mut()
-                .drawing_cell_mut(new_pos)
-                .unwrap()
-                .set_contents(&contents, attrs);
-            let hyperlink = self.hyperlink;
-            self.grid_mut()
-                .drawing_cell_mut(new_pos)
-                .unwrap()
-                .set_hyperlink(hyperlink);
-            if hyperlink.is_some() {
-                self.grid_mut()
-                    .drawing_row_mut(new_pos.row)
-                    // new_pos comes from col_wrap, which leaves a valid one
-                    .unwrap()
-                    .add_hyperlink();
-            }
-            self.grid_mut()
-                .drawing_cell_mut(old_pos)
-                .unwrap()
-                .clear(attrs);
-            self.grid_mut().col_inc(2);
-        } else {
+        base_pos: crate::grid::Pos,
+        on_row: F,
+    ) -> crate::grid::Pos
+    where
+        F: FnMut(&crate::row::Row),
+    {
+        if self.grid().pos().col < self.grid().size().cols() {
             self.grid_mut().col_inc(1);
+            return base_pos;
         }
+        let attrs = self.attrs;
+        let cell = self.grid_mut().drawing_cell_mut(base_pos).unwrap();
+        let contents = cell.contents().to_string();
+        cell.clear(attrs);
+        self.grid_mut().col_wrap(1, false, attrs, on_row);
+        // col_wrap always leaves self.grid().pos() on a valid cell
+        let new_pos = self.grid().pos();
+        self.grid_mut()
+            .drawing_cell_mut(new_pos)
+            .unwrap()
+            .set_contents(&contents, attrs);
+        let hyperlink = self.hyperlink;
+        self.grid_mut()
+            .drawing_cell_mut(new_pos)
+            .unwrap()
+            .set_hyperlink(hyperlink);
+        if hyperlink.is_some() {
+            self.grid_mut()
+                .drawing_row_mut(new_pos.row)
+                // new_pos comes from col_wrap, which leaves a valid one
+                .unwrap()
+                .add_hyperlink();
+        }
+        self.grid_mut().col_inc(2);
+        new_pos
     }
 
     // once we have drawn a character, clean up the wide character state of
@@ -1020,46 +1022,40 @@ impl Screen {
             }
         }
 
+        // A wide cell is always followed by its continuation, but a cell
+        // missing is nothing to clean up: a panic here would stop the parser.
+        let next_pos = crate::grid::Pos {
+            row: base_pos.row,
+            col: base_pos.col + 1,
+        };
+
         if cell_was_wide && !cell_is_wide {
-            let next_cell = self
-                .grid_mut()
-                .drawing_cell_mut(crate::grid::Pos {
-                    row: base_pos.row,
-                    col: base_pos.col + 1,
-                })
-                // base_pos.row is assumed valid, and this cell previously
-                // was wide, so there must have been a continuation cell
-                // after it.
-                .unwrap();
-            next_cell.set(' ', attrs);
+            if let Some(next_cell) =
+                self.grid_mut().drawing_cell_mut(next_pos)
+            {
+                next_cell.set(' ', attrs);
+            }
         }
 
         if !cell_was_wide && cell_is_wide {
-            let next_cell = self
-                .grid_mut()
-                .drawing_cell_mut(crate::grid::Pos {
-                    row: base_pos.row,
-                    col: base_pos.col + 1,
-                })
-                // base_pos.row is assumed valid, and the cell at base_pos
-                // has become wide, so it must have a cell after it (if it
-                // didn't, we would have wrapped earlier when widening the
-                // cell).
-                .unwrap();
+            // base_pos.row is assumed valid
+            let Some(next_cell) = self.grid_mut().drawing_cell_mut(next_pos)
+            else {
+                return;
+            };
             let next_cell_was_wide = next_cell.is_wide();
             next_cell.clear(crate::attrs::Attrs::default());
             next_cell.set_wide_continuation(true);
             next_cell.set_hyperlink(hyperlink);
             if next_cell_was_wide {
-                let next_next_cell = self
-                    .grid_mut()
-                    .drawing_cell_mut(crate::grid::Pos {
+                let Some(next_next_cell) =
+                    self.grid_mut().drawing_cell_mut(crate::grid::Pos {
                         row: base_pos.row,
                         col: base_pos.col + 2,
                     })
-                    // the cell at base_pos.col + 1 was previously wide, so
-                    // it must have had a continuation cell after it.
-                    .unwrap();
+                else {
+                    return;
+                };
                 next_next_cell.clear(attrs);
                 if base_pos.col + 2 == size.cols() - 1 {
                     self.grid_mut()
@@ -1227,14 +1223,7 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
                 screen.grid().drawing_cell(base_pos).unwrap().is_wide();
             if !cell_was_wide && cell_is_wide {
                 let on_row = Self::on_row(screen, &mut self.callbacks);
-                screen.grid_mut().col_wrap(1, false, attrs, on_row);
-                // col_wrap always leaves self.grid().pos() on a valid cell,
-                // so .drawing_cell(new_pos).unwrap() will always be valid.
-                let new_pos = screen.grid().pos();
-                screen.wrap_widened_cell(base_pos, new_pos);
-                if new_pos.col == 0 {
-                    base_pos = new_pos;
-                }
+                base_pos = screen.wrap_widened_cell(base_pos, on_row);
             }
         }
 

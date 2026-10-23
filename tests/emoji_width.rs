@@ -99,3 +99,45 @@ fn vs16_emoji_wrapping() {
     assert_eq!(cell(&parser, 1, 2), ("b".into(), false, false));
     assert_eq!(parser.screen().cursor_position(), (1, 2));
 }
+
+// Widened in the bottom-right cell, the emoji wraps onto a new row and the
+// screen scrolls, so the base cell it leaves behind is a row higher than
+// where it was written. Clearing the old position instead left a wide cell
+// with no continuation in the last column of that row, and the next write
+// there panicked looking for the continuation.
+#[test]
+fn vs16_emoji_widened_in_the_bottom_right_cell() {
+    for then in [
+        "\x1b[23;80He",
+        "\x1b[23;79H\u{26a0}\u{fe0f}",
+        "\x1b[23;79H  ",
+    ] {
+        let mut parser = vt100::Parser::default();
+        parser.process("\x1b[24;79H \u{26a0}\u{fe0f}".as_bytes());
+        assert_eq!(cell(&parser, 22, 78), (" ".into(), false, false));
+        assert_eq!(cell(&parser, 22, 79), ("".into(), false, false));
+        assert_eq!(
+            cell(&parser, 23, 0),
+            ("\u{26a0}\u{fe0f}".into(), true, false)
+        );
+        assert_eq!(cell(&parser, 23, 1), ("".into(), false, true));
+        assert_eq!(parser.screen().cursor_position(), (23, 2));
+
+        parser.process(then.as_bytes());
+    }
+}
+
+// With one row, the row the emoji was written in scrolls away entirely.
+#[test]
+fn vs16_emoji_widened_in_the_last_cell_of_a_one_row_screen() {
+    let mut parser = helpers::new(1, 4, 0);
+    parser.process("abc\u{26a0}\u{fe0f}".as_bytes());
+    assert_eq!(
+        cell(&parser, 0, 0),
+        ("\u{26a0}\u{fe0f}".into(), true, false)
+    );
+    assert_eq!(cell(&parser, 0, 1), ("".into(), false, true));
+    assert_eq!(parser.screen().cursor_position(), (0, 2));
+    parser.process(b"de");
+    assert_eq!(parser.screen().contents(), "\u{26a0}\u{fe0f}de");
+}
