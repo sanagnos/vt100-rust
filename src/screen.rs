@@ -1214,13 +1214,18 @@ impl<CB: crate::Callbacks> WrappedScreen<CB> {
             cell_was_wide =
                 screen.grid().drawing_cell(base_pos).unwrap().is_wide();
 
-            screen
-                .grid_mut()
-                .drawing_cell_mut(base_pos)
-                .unwrap()
-                .append(c);
-            let cell_is_wide =
-                screen.grid().drawing_cell(base_pos).unwrap().is_wide();
+            let cols = screen.grid().size().cols();
+            let cell = screen.grid_mut().drawing_cell_mut(base_pos).unwrap();
+            let before = cell.clone();
+            cell.append(c);
+            // a character wider than the screen is ignored (see
+            // calculate_width), and so is emoji presentation that would widen
+            // one past it
+            if cell.is_wide() && cols < 2 {
+                *cell = before;
+                return;
+            }
+            let cell_is_wide = cell.is_wide();
             if !cell_was_wide && cell_is_wide {
                 let on_row = Self::on_row(screen, &mut self.callbacks);
                 base_pos = screen.wrap_widened_cell(base_pos, on_row);

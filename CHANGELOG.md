@@ -48,6 +48,9 @@
   but the old position was cleared instead: the row above kept a wide cell
   with no continuation, and the next write to its last column panicked.
   Writing near a cell missing its continuation no longer panics either.
+* A VS16 that would widen a character in a one-column screen is ignored, as
+  a wide character there is. It panicked, as the wide cell had no room for
+  its continuation.
 
 ## [0.18.1] - 2026-10-19
 

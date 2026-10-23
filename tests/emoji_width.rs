@@ -141,3 +141,17 @@ fn vs16_emoji_widened_in_the_last_cell_of_a_one_row_screen() {
     parser.process(b"de");
     assert_eq!(parser.screen().contents(), "\u{26a0}\u{fe0f}de");
 }
+
+// A one-column screen has no room for the continuation cell, so a VS16
+// that would widen a character is ignored, as a wide character there is.
+#[test]
+fn vs16_emoji_in_a_one_column_screen() {
+    let mut parser = helpers::new(3, 1, 2);
+    parser.process("\u{26a0}\u{fe0f}".as_bytes());
+    assert_eq!(cell(&parser, 0, 0), ("\u{26a0}".into(), false, false));
+    assert_eq!(parser.screen().cursor_position(), (0, 1));
+    parser.process("a\u{2764}\u{fe0f}\x1b[1;1Hb".as_bytes());
+    assert_eq!(parser.screen().contents(), "ba\u{2764}");
+    parser.process("\x1b[3;1H \u{fe0f}".as_bytes());
+    assert_eq!(cell(&parser, 2, 0), (" \u{fe0f}".into(), false, false));
+}

@@ -38,6 +38,8 @@ fn choose_terminal_input_fragment(g: &mut quickcheck::Gen) -> Vec<u8> {
     #[derive(Clone)]
     enum Fragment {
         Text,
+        Emoji,
+        Move,
         Control,
         Escape,
         Csi,
@@ -50,7 +52,9 @@ fn choose_terminal_input_fragment(g: &mut quickcheck::Gen) -> Vec<u8> {
     impl quickcheck::Arbitrary for Fragment {
         fn arbitrary(g: &mut quickcheck::Gen) -> Self {
             match u8::arbitrary(g) {
-                0u8..=231 => Fragment::Text,
+                0u8..=215 => Fragment::Text,
+                216..=223 => Fragment::Emoji,
+                224..=231 => Fragment::Move,
                 232..=239 => Fragment::Control,
                 240..=247 => Fragment::Escape,
                 248..=255 => Fragment::Csi,
@@ -74,6 +78,19 @@ fn choose_terminal_input_fragment(g: &mut quickcheck::Gen) -> Vec<u8> {
             let s = c.encode_utf8(&mut b);
             (*s).to_string().into_bytes()
         }
+        // a character VS16 widens to two columns, or a VS16 alone
+        Fragment::Emoji => {
+            let base = ["", "1", "\u{26a0}", "\u{2764}", "\u{4e2d}"]
+                [gen_range(g, 0..5usize)];
+            format!("{base}\u{fe0f}").into_bytes()
+        }
+        // a cursor move anywhere on a small screen, its edges included
+        Fragment::Move => format!(
+            "\x1b[{};{}H",
+            gen_range(g, 1..13u8),
+            gen_range(g, 1..13u8)
+        )
+        .into_bytes(),
         Fragment::Control => vec![gen_range(g, 7..14)],
         Fragment::Escape => {
             let mut v = vec![0x1b];

@@ -235,6 +235,15 @@ pub fn screen_is_consistent(screen: &vt100::Screen) -> bool {
         u16::try_from(screen.scrollback()).unwrap_or(u16::MAX);
     for row in scrolled_back.min(rows)..rows {
         ok!(screen.cell(row, cols).is_none());
+        // A wide cell has its continuation after it, even in the last
+        // column, where it shouldn't be at all (but for one-column screens).
+        for col in 0..cols {
+            if cols > 1 && screen.cell(row, col).unwrap().is_wide() {
+                ok!(screen
+                    .cell(row, col + 1)
+                    .is_some_and(vt100::Cell::is_wide_continuation));
+            }
+        }
     }
     // Rows of scrollback in view are at least as wide as the screen.
     for row in 0..scrolled_back.min(rows) {
