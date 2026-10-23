@@ -236,6 +236,10 @@ pub fn screen_is_consistent(screen: &vt100::Screen) -> bool {
     for row in scrolled_back.min(rows)..rows {
         ok!(screen.cell(row, cols).is_none());
     }
+    // Rows of scrollback in view are at least as wide as the screen.
+    for row in 0..scrolled_back.min(rows) {
+        ok!(screen.cell(row, cols - 1).is_some());
+    }
     ok!(screen.cell(rows, 0).is_none());
     true
 }

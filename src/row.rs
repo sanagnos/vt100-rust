@@ -156,6 +156,15 @@ impl Row {
         }
     }
 
+    /// Makes this row a copy of `row`, at least `len` cells wide, in this
+    /// row's allocation where it's big enough.
+    pub fn copy_grown(&mut self, row: &Self, len: u16) {
+        self.cells.clone_from(&row.cells);
+        self.wrapped = row.wrapped;
+        self.hyperlinks = row.hyperlinks;
+        self.grow(len, crate::Cell::new());
+    }
+
     pub fn resize(&mut self, len: u16, cell: crate::Cell) {
         match usize::from(len).cmp(&self.cells.len()) {
             core::cmp::Ordering::Equal => {}

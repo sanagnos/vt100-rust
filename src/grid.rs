@@ -22,6 +22,11 @@ struct ScrollbackState {
     /// The number of rows of scrollback there *would* be if the scrollback
     /// capacity were unlimited.
     unbounded_len: usize,
+    /// Copies of the rows of scrollback in view, grown to the width of the
+    /// screen. The rows themselves stay as they went into the scrollback,
+    /// trimmed: grown in place, reading the whole scrollback a screenful at
+    /// a time left every row as wide as the screen.
+    view: Vec<crate::row::Row>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -39,6 +44,7 @@ impl Grid {
                 capacity,
                 offset: 0,
                 unbounded_len: 0,
+                view: Vec::new(),
             }),
         };
         Self {
@@ -92,6 +98,7 @@ impl Grid {
         self.scroll_bottom = self.size.rows() - 1;
         if let Some(scrollback) = &mut self.scrollback {
             scrollback.offset = 0;
+            scrollback.view = Vec::new();
         }
 
         let new_row = || crate::row::Row::new(size.cols());
@@ -213,17 +220,17 @@ impl Grid {
     }
 
     fn all_rows_mut(&mut self) -> impl Iterator<Item = &mut crate::row::Row> {
-        let scrollback =
-            self.scrollback.iter_mut().flat_map(|s| s.rows.iter_mut());
+        let scrollback = self
+            .scrollback
+            .iter_mut()
+            .flat_map(|s| s.rows.iter_mut().chain(&mut s.view));
         scrollback.chain(&mut self.rows)
     }
 
     pub fn visible_rows(&self) -> impl Iterator<Item = &crate::row::Row> {
         self.scrollback
-            .as_ref()
-            .map(|s| s.rows.iter().skip(s.rows.len() - s.offset))
-            .into_iter()
-            .flatten()
+            .iter()
+            .flat_map(|s| &s.view)
             .chain(&self.rows)
             .take(self.rows.len())
     }
@@ -284,18 +291,45 @@ impl Grid {
         self.scrollback.as_ref().map_or(0, |s| s.offset)
     }
 
-    /// Ensures every visible row of scrollback is at least the width of the
-    /// screen.
-    fn grow_visible_scrollback(scrollback: &mut ScrollbackState, size: Size) {
-        let scrollback_len = scrollback.rows.len();
-        scrollback
-            .rows
+    /// Copies the rows of scrollback in view into `view`, reusing the
+    /// copies' allocations, and drops them when none is in view.
+    fn copy_view(scrollback: &mut ScrollbackState, size: Size) {
+        let n = scrollback.offset.min(size.rows().into());
+        if n == 0 {
+            scrollback.view = Vec::new();
+            return;
+        }
+        let start = scrollback.rows.len() - scrollback.offset;
+        scrollback.view.truncate(n);
+        scrollback.view.resize_with(n, || crate::row::Row::new(0));
+        for (copy, row) in scrollback
+            .view
             .iter_mut()
-            .skip(scrollback_len - scrollback.offset)
-            .take(size.rows().into())
-            .for_each(|row| {
-                row.grow(size.cols(), crate::cell::Cell::new());
-            });
+            .zip(scrollback.rows.range(start..))
+        {
+            copy.copy_grown(row, size.cols());
+        }
+    }
+
+    /// Brings `view` up to date once the rows in view have moved `shift`
+    /// rows further down the scrollback, copying only the rows new to it.
+    fn shift_view(
+        scrollback: &mut ScrollbackState,
+        size: Size,
+        shift: usize,
+    ) {
+        let n = scrollback.view.len();
+        if n != scrollback.offset.min(size.rows().into()) || shift >= n {
+            return Self::copy_view(scrollback, size);
+        }
+        scrollback.view.rotate_left(shift);
+        let start = scrollback.rows.len() - scrollback.offset + n - shift;
+        for (copy, row) in scrollback.view[n - shift..]
+            .iter_mut()
+            .zip(scrollback.rows.range(start..))
+        {
+            copy.copy_grown(row, size.cols());
+        }
     }
 
     pub fn set_scrollback(&mut self, rows: usize) {
@@ -303,7 +337,7 @@ impl Grid {
             return;
         };
         scrollback.offset = rows.min(scrollback.rows.len());
-        Self::grow_visible_scrollback(scrollback, self.size);
+        Self::copy_view(scrollback, self.size);
     }
 
     pub fn write_contents(&self, contents: &mut String) {
@@ -621,6 +655,7 @@ impl Grid {
             }
             scrollback.unbounded_len = 0;
             scrollback.offset = 0;
+            scrollback.view = Vec::new();
         }
     }
 
@@ -733,6 +768,9 @@ impl Grid {
             // Number of rows that will be pushed to the scrollback.
             let num_pushed = count.min(scrollback.capacity);
 
+            // Where the rows in view start, to see how far they move.
+            let view_start = scrollback.rows.len() - scrollback.offset;
+
             // Scrollback length is capped at `scrollback.capacity`. These rows
             // will be lost, so just remove them now to avoid allocating.
             let scrollback_overflow = (scrollback.rows.len() + num_pushed)
@@ -763,8 +801,13 @@ impl Grid {
                     .offset
                     .saturating_add(count)
                     .min(scrollback.rows.len());
+                // The view stays on its rows, unless it's at the top of the
+                // scrollback and they're dropped.
+                let start = scrollback.rows.len() - scrollback.offset;
+                let shift =
+                    (start + scrollback_overflow).saturating_sub(view_start);
+                Self::shift_view(scrollback, self.size, shift);
             }
-            Self::grow_visible_scrollback(scrollback, self.size);
         } else {
             for row in &mut between[..num_removed] {
                 if scrollback_enabled {
@@ -982,4 +1025,116 @@ impl Size {
 pub struct Pos {
     pub row: u16,
     pub col: u16,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn size(rows: u16, cols: u16) -> Size {
+        Size {
+            rows: core::num::NonZeroU16::new(rows).unwrap(),
+            cols: core::num::NonZeroU16::new(cols).unwrap(),
+        }
+    }
+
+    // a grid whose scrollback holds `history` rows, each "x" and its number
+    fn grid(rows: u16, cols: u16, history: usize) -> Grid {
+        let mut grid = Grid::new(
+            size(rows, cols),
+            Scrollback::Enabled { capacity: history },
+        );
+        grid.allocate_rows();
+        for i in 0..history {
+            print(&mut grid, i);
+        }
+        grid
+    }
+
+    // writes row `i` on the top row, and scrolls it into the scrollback
+    fn print(grid: &mut Grid, i: usize) {
+        let attrs = crate::attrs::Attrs::default();
+        for (col, c) in (0..).zip(alloc::format!("x{i}").chars()) {
+            grid.drawing_cell_mut(Pos { row: 0, col })
+                .unwrap()
+                .set(c, attrs);
+        }
+        grid.scroll_up(1, attrs, |_| {});
+    }
+
+    // the rows of scrollback longer than their text
+    fn grown(grid: &Grid) -> Vec<usize> {
+        let rows = &grid.scrollback.as_ref().unwrap().rows;
+        (0..rows.len())
+            .filter(|&i| rows[i].get(5).is_some())
+            .collect()
+    }
+
+    // whether the rows in view are the rows of scrollback at the offset,
+    // and the screen's, at least as wide as the screen
+    fn view_is_right(grid: &Grid) -> bool {
+        let s = grid.scrollback.as_ref().unwrap();
+        let cols = grid.size.cols();
+        let expected = s
+            .rows
+            .range(s.rows.len() - s.offset..)
+            .chain(&grid.rows)
+            .take(grid.rows.len());
+        let mut contents = (String::new(), String::new());
+        grid.visible_rows().zip(expected).all(|(got, row)| {
+            contents.0.clear();
+            contents.1.clear();
+            got.write_contents(&mut contents.0, 0, cols, false);
+            row.write_contents(&mut contents.1, 0, cols, false);
+            got.get(cols - 1).is_some() && contents.0 == contents.1
+        }) && grid.visible_rows().count() == grid.rows.len()
+    }
+
+    // Reading the scrollback a screenful at a time, as a search or a copy
+    // of it does, grew every row to the screen's width and kept it so,
+    // undoing the trimming.
+    #[test]
+    fn reading_the_scrollback_leaves_its_rows_trimmed() {
+        let mut grid = grid(4, 80, 20);
+        assert!(grown(&grid).is_empty(), "{:?}", grown(&grid));
+        let len = grid.scrollback_len();
+        for row in (0..len).step_by(4) {
+            grid.set_scrollback(len - row);
+            assert!(view_is_right(&grid), "at {}", len - row);
+        }
+        grid.set_scrollback(0);
+        assert!(grown(&grid).is_empty(), "{:?}", grown(&grid));
+        assert!(grid.scrollback.as_ref().unwrap().view.is_empty());
+    }
+
+    // Output while scrolled back keeps the view on its rows, or at the top
+    // of a full scrollback, on the oldest rows left.
+    #[test]
+    fn output_while_scrolled_back_keeps_the_view_right() {
+        for offset in [1, 2, 3, 4, 7, 17, 20] {
+            let mut grid = grid(4, 80, 20);
+            grid.set_scrollback(offset);
+            for i in 20..40 {
+                print(&mut grid, i);
+                assert!(view_is_right(&grid), "scrolled back {offset}");
+                assert!(grown(&grid).is_empty(), "{:?}", grown(&grid));
+            }
+            let attrs = crate::attrs::Attrs::default();
+            grid.scroll_up(3, attrs, |_| {});
+            assert!(view_is_right(&grid), "scrolled back {offset}");
+            grid.scroll_up(30, attrs, |_| {});
+            assert!(view_is_right(&grid), "scrolled back {offset}");
+        }
+    }
+
+    // A resize goes back to the screen, and drops the copies.
+    #[test]
+    fn a_resize_drops_the_view() {
+        let mut grid = grid(4, 80, 20);
+        grid.set_scrollback(10);
+        grid.set_size(size(4, 60), |_| {});
+        assert_eq!(grid.scrollback(), 0);
+        assert!(grid.scrollback.as_ref().unwrap().view.is_empty());
+        assert!(view_is_right(&grid));
+    }
 }
